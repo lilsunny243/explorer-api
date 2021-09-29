@@ -1,4 +1,3 @@
-import math
 from collections import Iterable
 
 import graphene
@@ -9,14 +8,12 @@ from graphene_sqlalchemy_filter import FilterSet
 from sqlalchemy import INTEGER, Integer
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from sqlakeyset import get_page
-
 from app import settings
 from app.db import SessionManager
 from app.session import SessionLocal
 
-#TODO: temp workaround
-from sqlalchemy_pagination import paginate
+from sqlalchemy_pagination import paginate as pagination_offset
+from sqlakeyset import get_page as pagination_keyset
 
 
 REGISTERED_GRAPHQL_NODES = set()
@@ -70,32 +67,60 @@ class PaginationType(graphene.ObjectType):
     page_prev = graphene.String()
 
 
+def paginate_keyset(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
+    page_size = page_size or settings.DEFAULT_PAGE_SIZE
+    paged_qs = pagination_keyset(query, per_page=page_size, page=page_key)
+    page_info = PaginationType(
+        page_size=page_size,
+        page_next=paged_qs.paging.bookmark_next,
+        page_prev=paged_qs.paging.bookmark_previous
+    )
+    return paged_qs, page_info
+
+
+def paginate_offset(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
+    page_size = page_size or settings.DEFAULT_PAGE_SIZE
+
+    try:
+        page_key = page_key and int(page_key) or 1
+        if page_key < 1:
+            page_key = 1
+    except:
+        page_key = 1
+
+    paged_qs = pagination_offset(query, page_key, page_size)
+    page_info = PaginationType(
+        page_size=page_size,
+        page_next=paged_qs.next_page,
+        page_prev=paged_qs.previous_page,
+    )
+
+    return paged_qs.items, page_info
+
+
+def create_pagination(*fields):
+    def paginate_keyset_custom(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
+        page_size = page_size or settings.DEFAULT_PAGE_SIZE
+
+        if page_key:
+            for field in fields:
+                DEZE VELDEN MOETEN MATCHEN MET DE SORTERING!!!???
+        paged_qs = pagination_offset(query, page_key, page_size)
+        page_info = PaginationType(
+            page_size=page_size,
+            page_next=paged_qs.next_page,
+            page_prev=paged_qs.previous_page,
+        )
+
+    return paged_qs, page_info
+
+
 class AbstractPaginatedType(graphene.ObjectType):
 
     @classmethod
-    def create_paginated_result(cls, query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
-        page_size = page_size or settings.DEFAULT_PAGE_SIZE
-        # paged_qs = get_page(query, per_page=page_size, page=page_key)
-        # page_info = PaginationType(
-        #     page_size=page_size,
-        #     page_next=paged_qs.paging.bookmark_next,
-        #     page_prev=paged_qs.paging.bookmark_previous
-        # )
-        try:
-            page_key = page_key and int(page_key) or 1
-            if page_key < 1:
-                page_key = 1
-        except:
-            page_key = 1
-
-        pagination = paginate(query, page_key, page_size)
-        page_info = PaginationType(
-            page_size=page_size,
-            page_next=pagination.next_page,
-            page_prev=pagination.previous_page,
-        )
-
-        return cls(objects=pagination.items, page_info=page_info)
+    def create_paginated_result(cls, query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE, page_func=paginate_keyset):
+        paged_qs, page_info = page_func(query, page_key, page_size=page_size)
+        return cls(objects=paged_qs, page_info=page_info)
 
 
 class QueryNodeOne(object):
@@ -109,7 +134,7 @@ class QueryNodeOne(object):
             filter_combinations=None,
             schema_overrides=None,
             order_by=None,
-            paginated=False,
+            pagination=None,
             return_type=None
     ):
         if class_name in REGISTERED_GRAPHQL_NODES:
@@ -125,7 +150,10 @@ class QueryNodeOne(object):
         else:
             node_schema = create_schema(class_name, model_, schema_overrides=schema_overrides)
 
-        if paginated:
+        if pagination:
+            if pagination not instance(pagination, (paginate_keyset, paginate_offset, custom_keyset)):
+                raise Exception("No pagination method specified")
+
             pagination_obj = create_paginated_type(class_name, node_schema)
             node_schema = pagination_obj
             node_args["page_key"] = graphene.String()
@@ -165,7 +193,8 @@ class QueryNodeOne(object):
             filter_obj,
             filter_required,
             filter_combinations,
-            pagination_obj
+            pagination_obj,
+            pagination
         )
 
         if not return_type:
@@ -199,7 +228,7 @@ class QueryNodeOne(object):
                     f'The following {class_name} filters depend on other filters, missing combinations: {str(missing_filters)}')
 
     @staticmethod
-    def resolve(class_name, model, order_by, filter_obj, filter_required, filter_combinations, pagination_obj):
+    def resolve(class_name, model, order_by, filter_obj, filter_required, filter_combinations, pagination_obj, pagination_func):
         def resolve_func(self, info, filters=None, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
             with SessionManager(session_cls=SessionLocal) as session:
                 query = session.query(model)
@@ -221,14 +250,14 @@ class QueryNodeOne(object):
 
 class QueryNodeMany(QueryNodeOne):
     def __init__(self, *args, **kwargs):
-        if not kwargs.get("paginated", None):
+        if not kwargs.get("pagination", None):
             if "return_type" not in kwargs:
                 kwargs["return_type"] = graphene.List
 
         super(QueryNodeMany, self).__init__(*args, **kwargs)
 
     @staticmethod
-    def resolve(class_name, model, order_by, filter_obj, filter_required, filter_combinations, pagination_obj):
+    def resolve(class_name, model, order_by, filter_obj, filter_required, filter_combinations, pagination_obj, pagination_func):
         def resolve_func(self, info, filters=None, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
             with SessionManager(session_cls=SessionLocal) as session:
                 query = session.query(model)
@@ -244,9 +273,8 @@ class QueryNodeMany(QueryNodeOne):
                 elif filter_required:
                     raise GraphQLError(f'{class_name} requires filters')
 
-                if pagination_obj:
-                    #TODO:!!!!!! pak de pagination als sqla clausule op en gooi die in de where clausule!
-                    query = pagination_obj.create_paginated_result(query, page_key, page_size)
+                if pagination_func:
+                    query = pagination_obj.create_paginated_result(query, page_key, page_size, page_func=pagination_func)
 
                 return query
 
