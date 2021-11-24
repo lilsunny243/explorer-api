@@ -98,21 +98,21 @@ def paginate_offset(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
     return paged_qs.items, page_info
 
 
-def create_pagination(*fields):
-    def paginate_keyset_custom(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
-        page_size = page_size or settings.DEFAULT_PAGE_SIZE
-
-        if page_key:
-            for field in fields:
-                DEZE VELDEN MOETEN MATCHEN MET DE SORTERING!!!???
-        paged_qs = pagination_offset(query, page_key, page_size)
-        page_info = PaginationType(
-            page_size=page_size,
-            page_next=paged_qs.next_page,
-            page_prev=paged_qs.previous_page,
-        )
-
-    return paged_qs, page_info
+# def create_custom_keyset_pagination(*fields):
+#     def paginate_keyset_custom(query, page_key=None, page_size=settings.DEFAULT_PAGE_SIZE):
+#         page_size = page_size or settings.DEFAULT_PAGE_SIZE
+#
+#         if page_key:
+#             for field in fields:
+#                 DEZE VELDEN MOETEN MATCHEN MET DE SORTERING!!!???
+#         paged_qs = pagination_offset(query, page_key, page_size)
+#         page_info = PaginationType(
+#             page_size=page_size,
+#             page_next=paged_qs.next_page,
+#             page_prev=paged_qs.previous_page,
+#         )
+#
+#     return paged_qs, page_info
 
 
 class AbstractPaginatedType(graphene.ObjectType):
@@ -151,8 +151,9 @@ class QueryNodeOne(object):
             node_schema = create_schema(class_name, model_, schema_overrides=schema_overrides)
 
         if pagination:
-            if pagination not instance(pagination, (paginate_keyset, paginate_offset, custom_keyset)):
-                raise Exception("No pagination method specified")
+            #if pagination not instance(pagination, (paginate_keyset, paginate_offset, create_custom_keyset)):
+            # if pagination not instance(pagination, (paginate_keyset, paginate_offset)):
+            #     raise Exception("No pagination method specified")
 
             pagination_obj = create_paginated_type(class_name, node_schema)
             node_schema = pagination_obj
