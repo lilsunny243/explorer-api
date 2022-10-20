@@ -5,10 +5,13 @@ from pydantic import AnyHttpUrl, BaseSettings, HttpUrl, validator
 
 default_env_ext = ".env"
 local_env_ext = ".local.env"
+test_env_ext = ".test.env"
 
 
 class Settings(BaseSettings):
     CHAIN_ID: str
+    HTTP_MOUNT: str = "/graphql"
+    WS_MOUNT: str = "/graphql-ws"
     API_STR: str = "/api/"
     SERVER_ADDR: str
     SERVER_PORT: int
@@ -35,6 +38,11 @@ class Settings(BaseSettings):
             local_env_file = env_file[:-len(default_env_ext)] + local_env_ext
             if os.path.exists(local_env_file):
                 default_kws["_env_file"] = local_env_file
+            #TODO:!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            test_env_file = env_file[:-len(default_env_ext)] + test_env_ext
+            if os.path.exists(test_env_file):
+                import pdb;pdb.set_trace()
+                default_kws["_env_file"] = test_env_file
         default_kws.update(kwargs)
         super().__init__(*args, **default_kws)
 
