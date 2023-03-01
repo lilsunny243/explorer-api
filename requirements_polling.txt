@@ -3,6 +3,6 @@ asyncio-redis==0.16.0
 python-dotenv==0.15.0
 broadcaster==0.2.0
 PyMySQL==0.9.3
-cryptography==3.4.6
+cryptography==39.0.1
 tenacity==7.0.0
 sentry-sdk==1.2.0
